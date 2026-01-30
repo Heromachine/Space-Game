@@ -64,6 +64,50 @@
             transform: scale(1.1);
             box-shadow: 0 0 30px #00ffff, 0 0 50px #00ffff;
         }
+
+        #controls {
+            margin-bottom: 40px;
+            padding: 30px;
+            background: rgba(0, 100, 150, 0.3);
+            border: 2px solid #00ffff;
+            border-radius: 15px;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
+        }
+
+        #controls h2 {
+            color: #00ffff;
+            font-size: 28px;
+            margin: 0 0 20px 0;
+            text-align: center;
+            text-shadow: 0 0 10px #00ffff;
+        }
+
+        .control-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 10px 0;
+            color: #fff;
+            font-size: 18px;
+        }
+
+        .control-key {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 8px 16px;
+            border-radius: 5px;
+            border: 1px solid #00ffff;
+            font-weight: bold;
+            color: #00ffff;
+            min-width: 120px;
+            text-align: center;
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.2);
+        }
+
+        .control-description {
+            margin-left: 20px;
+            flex: 1;
+            text-align: left;
+        }
     </style>
 </head>
 <body>
@@ -71,6 +115,39 @@
 
     <div id="menu">
         <h1 id="gameTitle">SPACE GAME</h1>
+
+        <div id="controls">
+            <h2>KEYBOARD CONTROLS</h2>
+            <div class="control-row">
+                <span class="control-key">W A S D</span>
+                <span class="control-description">Move</span>
+            </div>
+            <div class="control-row">
+                <span class="control-key">Mouse</span>
+                <span class="control-description">Aim</span>
+            </div>
+            <div class="control-row">
+                <span class="control-key">Left Click</span>
+                <span class="control-description">Shoot</span>
+            </div>
+            <div class="control-row">
+                <span class="control-key">Right Click</span>
+                <span class="control-description">Guard (uses stamina)</span>
+            </div>
+            <div class="control-row">
+                <span class="control-key">Spacebar</span>
+                <span class="control-description">Place Mine</span>
+            </div>
+            <div class="control-row">
+                <span class="control-key">B</span>
+                <span class="control-description">Buy Mine (5 coins)</span>
+            </div>
+            <div class="control-row">
+                <span class="control-key">Click Health Icon</span>
+                <span class="control-description">Buy Health (1 coin)</span>
+            </div>
+        </div>
+
         <button id="startButton">Start</button>
     </div>
 
