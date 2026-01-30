@@ -43,8 +43,8 @@ class EnemyManager {
                 // Parse value based on type
                 if (header === 'type' || header === 'color') {
                     enemyConfig[header] = value;
-                } else if (header === 'minLevel') {
-                    enemyConfig.minLevel = parseInt(value);
+                } else if (header === 'minLevel' || header === 'doublesEvery') {
+                    enemyConfig[header] = parseInt(value);
                 } else {
                     // Convert to number
                     enemyConfig[header] = parseFloat(value);
@@ -144,6 +144,14 @@ class EnemyManager {
             case 'purple':
                 // Start spawning from level 1
                 return level >= 1 ? level : 0;
+
+            case 'sentinel':
+                // Doubles every 10 levels (1, 2, 4, 8, 16...)
+                if (config.doublesEvery) {
+                    const multiplier = Math.floor(level / config.doublesEvery);
+                    return Math.pow(2, multiplier);
+                }
+                return 1;
 
             case 'turret':
                 // Only spawn if level >= minLevel (5)

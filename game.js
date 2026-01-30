@@ -275,11 +275,12 @@ function spawnEnemies() {
         // Normal level spawning - get spawn counts from enemy manager
         const blueCount = enemyManager.getSpawnCount('blue', currentLevel);
         const purpleCount = enemyManager.getSpawnCount('purple', currentLevel);
+        const sentinelCount = enemyManager.getSpawnCount('sentinel', currentLevel);
         const turretCount = enemyManager.getSpawnCount('turret', currentLevel);
 
         // Reset money tracking for new level
         player.money = 0;
-        const totalEnemies = blueCount + purpleCount + turretCount;
+        const totalEnemies = blueCount + purpleCount + sentinelCount + turretCount;
         player.moneyRequired = totalEnemies; // Total coins that will drop from all enemies
 
         // Spawn blue enemies
@@ -310,6 +311,22 @@ function spawnEnemies() {
             enemy.vx = 0;
             enemy.vy = 0;
             enemy.state = 'idle';
+            enemies.push(enemy);
+        }
+
+        // Spawn sentinel enemies
+        for (let i = 0; i < sentinelCount; i++) {
+            let x, y;
+            do {
+                x = Math.random() * (canvas.width - 100) + 50;
+                y = Math.random() * (canvas.height - 100) + 50;
+            } while (Math.hypot(x - player.x, y - player.y) < 300);
+
+            const enemy = enemyManager.createEnemy('sentinel', x, y);
+            enemy.vx = 0;
+            enemy.vy = 0;
+            enemy.state = 'idle';
+            enemy.activated = false; // Track if sentinel has been shot
             enemies.push(enemy);
         }
 
@@ -465,6 +482,12 @@ function updateMines() {
                     const distance = Math.hypot(dx, dy);
 
                     if (distance < mine.explosionRadius) {
+                        // Activate sentinel if damaged by mine
+                        if (enemy.type === 'sentinel' && !enemy.activated) {
+                            enemy.activated = true;
+                            enemy.state = 'chase';
+                        }
+
                         // Apply damage
                         enemy.health -= mineConfig.damagePerTick;
 
@@ -597,6 +620,12 @@ function updateBullets() {
             }
 
             if (distance < bullets[i].radius + enemyRadius) {
+                // Activate sentinel if hit
+                if (enemies[j].type === 'sentinel' && !enemies[j].activated) {
+                    enemies[j].activated = true;
+                    enemies[j].state = 'chase';
+                }
+
                 // Calculate damage
                 let damage = 10;
 
@@ -719,6 +748,19 @@ function updateEnemies() {
                 enemy.vy = 0;
             } else if (enemy.state === 'chase') {
                 // Continuously chase player at faster speed
+                const angle = Math.atan2(dy, dx);
+                enemy.vx = Math.cos(angle) * enemy.speed;
+                enemy.vy = Math.sin(angle) * enemy.speed;
+            }
+        } else if (enemy.type === 'sentinel') {
+            // Sentinel enemy behavior - idle until shot, then chase
+            if (enemy.state === 'idle' && !enemy.activated) {
+                // Stay still when idle and not activated
+                enemy.vx = 0;
+                enemy.vy = 0;
+            } else if (enemy.activated || enemy.state === 'chase') {
+                // Chase player when activated
+                enemy.state = 'chase';
                 const angle = Math.atan2(dy, dx);
                 enemy.vx = Math.cos(angle) * enemy.speed;
                 enemy.vy = Math.sin(angle) * enemy.speed;
@@ -1144,6 +1186,34 @@ function drawEnemies() {
             ctx.textAlign = 'center';
             ctx.textBaseline = 'bottom';
             ctx.fillText('BOSS 1', enemy.x, barY - 5);
+        } else if (enemy.type === 'sentinel') {
+            // Draw sentinel with outer blue circle and darker blue core
+            // Outer blue circle
+            ctx.fillStyle = enemy.color; // #0000ff
+            ctx.beginPath();
+            ctx.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Inner darker blue core
+            ctx.fillStyle = '#000080'; // Darker blue
+            ctx.beginPath();
+            ctx.arc(enemy.x, enemy.y, enemy.radius * 0.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw health bar
+            const barWidth = enemy.radius * 2;
+            const barHeight = 4;
+            const barX = enemy.x - barWidth / 2;
+            const barY = enemy.y + enemy.radius + 5;
+
+            // Background
+            ctx.fillStyle = '#333333';
+            ctx.fillRect(barX, barY, barWidth, barHeight);
+
+            // Health
+            const healthWidth = (barWidth * enemy.health) / enemy.maxHealth;
+            ctx.fillStyle = '#ff0000'; // red
+            ctx.fillRect(barX, barY, healthWidth, barHeight);
         } else {
             // Draw enemy circle (blue or purple)
             ctx.fillStyle = enemy.color;
