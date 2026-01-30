@@ -43,6 +43,8 @@ class EnemyManager {
                 // Parse value based on type
                 if (header === 'type' || header === 'color') {
                     enemyConfig[header] = value;
+                } else if (header === 'minLevel') {
+                    enemyConfig.minLevel = parseInt(value);
                 } else {
                     // Convert to number
                     enemyConfig[header] = parseFloat(value);
@@ -130,15 +132,22 @@ class EnemyManager {
         const config = this.getEnemyConfig(type);
         if (!config) return 0;
 
+        // Check if level meets minimum requirement
+        if (config.minLevel && level < config.minLevel) {
+            return 0;
+        }
+
         switch (type) {
             case 'blue':
                 return Math.floor(level / 2) + 1;
 
             case 'purple':
-                return Math.floor(level / 2);
+                // Start spawning from level 1
+                return level >= 1 ? level : 0;
 
             case 'turret':
-                return Math.floor(level / 5) + 1;
+                // Only spawn if level >= minLevel (5)
+                return level >= config.minLevel ? Math.floor((level - config.minLevel) / 5) + 1 : 0;
 
             case 'boss':
                 // Only spawn on multiples of 10

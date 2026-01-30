@@ -1,6 +1,6 @@
-type,level,cost,radius,size,color,normalSpeed,dashSpeed,activationRadius,dashRadius,dashCooldown,maxHealth,damage,shootCooldown,bulletSpeed,bulletRadius
+type,minLevel,cost,radius,size,color,normalSpeed,dashSpeed,activationRadius,dashRadius,dashCooldown,maxHealth,damage,shootCooldown,bulletSpeed,bulletRadius
 blue,1,0,25,,#0000ff,1,8,,200,1000,50,10,,,
-purple,1,0,15,,#9932cc,3,,,250,,25,5,,,
-turret,1,0,,30,#ff8c00,0,,,,,100,8,2000,12,6
-boss,1,0,,80,#ffff00,1,6,,250,2000,500,15,,,
-boss-turret,1,0,,30,#ff8c00,0,,,,,100,8,2000,12,6
+purple,1,0,15,,#9932cc,3,,250,,,25,5,,,
+turret,5,0,,30,#ff8c00,0,,,,,100,8,2000,12,6
+boss,10,0,,80,#ffff00,1,6,,250,2000,500,15,,,
+boss-turret,10,0,,30,#ff8c00,0,,,,,100,8,2000,12,6
