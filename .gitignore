@@ -1,0 +1,9 @@
+# macOS
+.DS_Store
+
+# VS Code settings (optional - remove this line if you want to include VS Code settings)
+.vscode/
+
+# Backup folders
+Backup-01/
+Backup-02/
