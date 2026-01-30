@@ -309,6 +309,7 @@ function spawnEnemies() {
             const enemy = enemyManager.createEnemy('purple', x, y);
             enemy.vx = 0;
             enemy.vy = 0;
+            enemy.state = 'idle';
             enemies.push(enemy);
         }
 
