@@ -15,8 +15,10 @@
 
         #gameCanvas {
             display: block;
-            width: 100vw;
-            height: 100vh;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
         }
 
         #menu {
@@ -108,6 +110,79 @@
             flex: 1;
             text-align: left;
         }
+
+        /* Responsive scaling for smaller viewports */
+        @media (max-height: 768px) {
+            #gameTitle {
+                font-size: 48px;
+                margin-bottom: 25px;
+            }
+
+            #controls {
+                margin-bottom: 20px;
+                padding: 15px 20px;
+            }
+
+            #controls h2 {
+                font-size: 20px;
+                margin: 0 0 10px 0;
+            }
+
+            .control-row {
+                margin: 5px 0;
+                font-size: 14px;
+            }
+
+            .control-key {
+                padding: 5px 10px;
+                min-width: 90px;
+            }
+
+            .control-description {
+                margin-left: 15px;
+            }
+
+            #startButton {
+                font-size: 24px;
+                padding: 15px 45px;
+            }
+        }
+
+        @media (max-height: 600px) {
+            #gameTitle {
+                font-size: 36px;
+                margin-bottom: 15px;
+            }
+
+            #controls {
+                margin-bottom: 15px;
+                padding: 10px 15px;
+            }
+
+            #controls h2 {
+                font-size: 16px;
+                margin: 0 0 8px 0;
+            }
+
+            .control-row {
+                margin: 3px 0;
+                font-size: 12px;
+            }
+
+            .control-key {
+                padding: 4px 8px;
+                min-width: 70px;
+            }
+
+            .control-description {
+                margin-left: 10px;
+            }
+
+            #startButton {
+                font-size: 18px;
+                padding: 10px 30px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -151,6 +226,7 @@
         <button id="startButton">Start</button>
     </div>
 
+    <script src="config.js"></script>
     <script src="enemies.js"></script>
     <script src="game.js"></script>
 </body>

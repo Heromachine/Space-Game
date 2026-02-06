@@ -3,9 +3,44 @@ const ctx = canvas.getContext('2d');
 const menu = document.getElementById('menu');
 const startButton = document.getElementById('startButton');
 
-// Set canvas size
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+// Check if device is mobile and in portrait mode
+function isMobilePortrait() {
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+                     (window.innerWidth <= CONFIG.display.mobileMaxWidth);
+    const isPortrait = window.innerHeight > window.innerWidth;
+    return isMobile && isPortrait;
+}
+
+// Calculate canvas size maintaining aspect ratio
+function updateCanvasSize() {
+    const windowWidth = window.innerWidth;
+    const windowHeight = window.innerHeight;
+
+    // Choose aspect ratio based on device orientation
+    const targetAspect = isMobilePortrait()
+        ? CONFIG.display.portraitAspectRatio
+        : CONFIG.display.landscapeAspectRatio;
+
+    let canvasWidth, canvasHeight;
+
+    if (windowWidth / windowHeight > targetAspect) {
+        // Window is wider than target aspect ratio - fit to height
+        canvasHeight = windowHeight;
+        canvasWidth = canvasHeight * targetAspect;
+    } else {
+        // Window is taller than target aspect ratio - fit to width
+        canvasWidth = windowWidth;
+        canvasHeight = canvasWidth / targetAspect;
+    }
+
+    canvas.width = canvasWidth;
+    canvas.height = canvasHeight;
+    canvas.style.width = canvasWidth + 'px';
+    canvas.style.height = canvasHeight + 'px';
+}
+
+// Set initial canvas size
+updateCanvasSize();
 
 // Game state
 let gameStarted = false;
@@ -89,8 +124,10 @@ const goldConfig = {
 
 // Event listeners
 window.addEventListener('resize', () => {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    updateCanvasSize();
+    // Keep player within new bounds
+    player.x = Math.max(player.size, Math.min(canvas.width - player.size, player.x));
+    player.y = Math.max(player.size, Math.min(canvas.height - player.size, player.y));
 });
 
 window.addEventListener('keydown', (e) => {
@@ -112,8 +149,10 @@ window.addEventListener('keyup', (e) => {
 });
 
 window.addEventListener('mousemove', (e) => {
-    mouseX = e.clientX;
-    mouseY = e.clientY;
+    // Convert window coordinates to canvas coordinates
+    const rect = canvas.getBoundingClientRect();
+    mouseX = e.clientX - rect.left;
+    mouseY = e.clientY - rect.top;
 });
 
 window.addEventListener('mousedown', (e) => {
@@ -152,16 +191,18 @@ window.addEventListener('click', (e) => {
 
     // Check if click is on health icon or mine icon (for purchasing)
     if (gameStarted && !gameOver) {
-        const barWidth = 100; // Half of 200
-        const barHeight = 15; // Half of 30
+        const barWidth = CONFIG.ui.barWidth;
+        const barHeight = CONFIG.ui.barHeight;
         const iconSize = barHeight;
-        const padding = 20;
-        const barSpacing = 5; // Half of 10
+        const padding = CONFIG.ui.barPadding;
+        const barSpacing = CONFIG.ui.barSpacing;
         const healthIconX = canvas.width - padding - barWidth - iconSize - 10;
         const healthIconY = padding;
 
-        const clickX = e.clientX;
-        const clickY = e.clientY;
+        // Convert window coordinates to canvas coordinates
+        const rect = canvas.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        const clickY = e.clientY - rect.top;
 
         // Check if click is within health icon bounds
         if (clickX >= healthIconX && clickX <= healthIconX + iconSize &&
@@ -1299,17 +1340,17 @@ function drawBackground() {
 // Draw health bar in top right
 function drawHealthBar() {
     // Set transparency and glow for all UI bars
-    ctx.globalAlpha = 0.7;
+    ctx.globalAlpha = CONFIG.ui.barOpacity;
     ctx.shadowBlur = 10;
-    ctx.shadowColor = '#ffff00';
+    ctx.shadowColor = CONFIG.ui.barBorderColor;
 
-    const barWidth = 100; // Half of 200
-    const barHeight = 15; // Half of 30
+    const barWidth = CONFIG.ui.barWidth;
+    const barHeight = CONFIG.ui.barHeight;
     const iconSize = barHeight; // Make square same height as bar
-    const padding = 20;
-    const borderWidth = 1.5; // Half of 3
-    const borderRadius = 2.5; // Half of 5
-    const barSpacing = 5; // Half of 10
+    const padding = CONFIG.ui.barPadding;
+    const borderWidth = CONFIG.ui.barBorderWidth;
+    const borderRadius = CONFIG.ui.barBorderRadius;
+    const barSpacing = CONFIG.ui.barSpacing;
 
     // Health bar
     const healthIconX = canvas.width - padding - barWidth - iconSize - 10;
@@ -1318,7 +1359,7 @@ function drawHealthBar() {
     const healthBarY = padding;
 
     // Draw health icon square with yellow border and rounded corners
-    ctx.strokeStyle = '#ffff00'; // yellow
+    ctx.strokeStyle = CONFIG.ui.barBorderColor;
     ctx.lineWidth = borderWidth;
     ctx.beginPath();
     ctx.roundRect(healthIconX, healthIconY, iconSize, iconSize, borderRadius);
@@ -1332,21 +1373,21 @@ function drawHealthBar() {
     ctx.fillRect(healthIconX + iconSize / 2 - plusLength / 2, healthIconY + iconSize / 2 - plusThickness / 2, plusLength, plusThickness); // Horizontal line
 
     // Draw health bar background with yellow border and rounded corners
-    ctx.strokeStyle = '#ffff00'; // yellow
+    ctx.strokeStyle = CONFIG.ui.barBorderColor;
     ctx.lineWidth = borderWidth;
     ctx.beginPath();
     ctx.roundRect(healthBarX, healthBarY, barWidth, barHeight, borderRadius);
     ctx.stroke();
 
     // Draw health bar background (dark) with rounded corners
-    ctx.fillStyle = '#333333';
+    ctx.fillStyle = CONFIG.ui.barBackgroundColor;
     ctx.beginPath();
     ctx.roundRect(healthBarX + borderWidth, healthBarY + borderWidth, barWidth - borderWidth * 2, barHeight - borderWidth * 2, borderRadius - 1);
     ctx.fill();
 
     // Draw health bar (red) with rounded corners
     const healthWidth = ((barWidth - borderWidth * 2) * player.health) / player.maxHealth;
-    ctx.fillStyle = '#ff0000'; // red
+    ctx.fillStyle = CONFIG.ui.healthBarColor;
     ctx.beginPath();
     ctx.roundRect(healthBarX + borderWidth, healthBarY + borderWidth, healthWidth, barHeight - borderWidth * 2, borderRadius - 1);
     ctx.fill();
@@ -1358,7 +1399,7 @@ function drawHealthBar() {
     const staminaBarY = healthBarY + barHeight + barSpacing;
 
     // Draw stamina icon square with yellow border and rounded corners
-    ctx.strokeStyle = '#ffff00'; // yellow
+    ctx.strokeStyle = CONFIG.ui.barBorderColor;
     ctx.lineWidth = borderWidth;
     ctx.beginPath();
     ctx.roundRect(staminaIconX, staminaIconY, iconSize, iconSize, borderRadius);
@@ -1372,21 +1413,21 @@ function drawHealthBar() {
     ctx.fillText('S', staminaIconX + iconSize / 2, staminaIconY + iconSize / 2);
 
     // Draw stamina bar background with yellow border and rounded corners
-    ctx.strokeStyle = '#ffff00'; // yellow
+    ctx.strokeStyle = CONFIG.ui.barBorderColor;
     ctx.lineWidth = borderWidth;
     ctx.beginPath();
     ctx.roundRect(staminaBarX, staminaBarY, barWidth, barHeight, borderRadius);
     ctx.stroke();
 
     // Draw stamina bar background (dark) with rounded corners
-    ctx.fillStyle = '#333333';
+    ctx.fillStyle = CONFIG.ui.barBackgroundColor;
     ctx.beginPath();
     ctx.roundRect(staminaBarX + borderWidth, staminaBarY + borderWidth, barWidth - borderWidth * 2, barHeight - borderWidth * 2, borderRadius - 1);
     ctx.fill();
 
     // Draw stamina bar (green) with rounded corners
     const staminaWidth = ((barWidth - borderWidth * 2) * player.stamina) / player.maxStamina;
-    ctx.fillStyle = '#00ff00'; // green
+    ctx.fillStyle = CONFIG.ui.staminaBarColor;
     ctx.beginPath();
     ctx.roundRect(staminaBarX + borderWidth, staminaBarY + borderWidth, staminaWidth, barHeight - borderWidth * 2, borderRadius - 1);
     ctx.fill();
@@ -1398,7 +1439,7 @@ function drawHealthBar() {
     const moneyBarY = staminaBarY + barHeight + barSpacing;
 
     // Draw money icon square with yellow border and rounded corners
-    ctx.strokeStyle = '#ffff00'; // yellow
+    ctx.strokeStyle = CONFIG.ui.barBorderColor;
     ctx.lineWidth = borderWidth;
     ctx.beginPath();
     ctx.roundRect(moneyIconX, moneyIconY, iconSize, iconSize, borderRadius);
@@ -1412,14 +1453,14 @@ function drawHealthBar() {
     ctx.fillText('$', moneyIconX + iconSize / 2, moneyIconY + iconSize / 2);
 
     // Draw money bar background with yellow border and rounded corners
-    ctx.strokeStyle = '#ffff00'; // yellow
+    ctx.strokeStyle = CONFIG.ui.barBorderColor;
     ctx.lineWidth = borderWidth;
     ctx.beginPath();
     ctx.roundRect(moneyBarX, moneyBarY, barWidth, barHeight, borderRadius);
     ctx.stroke();
 
     // Draw money bar background (dark) with rounded corners
-    ctx.fillStyle = '#333333';
+    ctx.fillStyle = CONFIG.ui.barBackgroundColor;
     ctx.beginPath();
     ctx.roundRect(moneyBarX + borderWidth, moneyBarY + borderWidth, barWidth - borderWidth * 2, barHeight - borderWidth * 2, borderRadius - 1);
     ctx.fill();
@@ -1428,7 +1469,7 @@ function drawHealthBar() {
     // Include both level coins and rollover coins in percentage
     const totalCollected = player.money + player.totalMoney;
     const moneyWidth = player.moneyRequired > 0 ? Math.min((barWidth - borderWidth * 2) * totalCollected / player.moneyRequired, barWidth - borderWidth * 2) : 0;
-    ctx.fillStyle = '#ffff00'; // yellow
+    ctx.fillStyle = CONFIG.ui.moneyBarColor;
     ctx.beginPath();
     ctx.roundRect(moneyBarX + borderWidth, moneyBarY + borderWidth, moneyWidth, barHeight - borderWidth * 2, borderRadius - 1);
     ctx.fill();
@@ -1448,7 +1489,7 @@ function drawHealthBar() {
     const mineBarY = moneyBarY + barHeight + barSpacing;
 
     // Draw mine icon square with yellow border and rounded corners
-    ctx.strokeStyle = '#ffff00'; // yellow
+    ctx.strokeStyle = CONFIG.ui.barBorderColor;
     ctx.lineWidth = borderWidth;
     ctx.beginPath();
     ctx.roundRect(mineIconX, mineIconY, iconSize, iconSize, borderRadius);
@@ -1462,21 +1503,21 @@ function drawHealthBar() {
     ctx.fillText('M', mineIconX + iconSize / 2, mineIconY + iconSize / 2);
 
     // Draw mine bar background with yellow border and rounded corners
-    ctx.strokeStyle = '#ffff00'; // yellow
+    ctx.strokeStyle = CONFIG.ui.barBorderColor;
     ctx.lineWidth = borderWidth;
     ctx.beginPath();
     ctx.roundRect(mineBarX, mineBarY, barWidth, barHeight, borderRadius);
     ctx.stroke();
 
     // Draw mine bar background (dark) with rounded corners
-    ctx.fillStyle = '#333333';
+    ctx.fillStyle = CONFIG.ui.barBackgroundColor;
     ctx.beginPath();
     ctx.roundRect(mineBarX + borderWidth, mineBarY + borderWidth, barWidth - borderWidth * 2, barHeight - borderWidth * 2, borderRadius - 1);
     ctx.fill();
 
     // Draw mine bar (light gray) with rounded corners
     const mineWidth = ((barWidth - borderWidth * 2) * player.mines) / player.maxMines;
-    ctx.fillStyle = '#c0c0c0'; // light gray
+    ctx.fillStyle = CONFIG.ui.mineBarColor;
     ctx.beginPath();
     ctx.roundRect(mineBarX + borderWidth, mineBarY + borderWidth, mineWidth, barHeight - borderWidth * 2, borderRadius - 1);
     ctx.fill();
