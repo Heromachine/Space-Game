@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Space Game - Enemy Test</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: 'Arial', sans-serif;
+        }
+
+        #gameCanvas {
+            display: block;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        #menu {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 10;
+        }
+
+        #menu.hidden {
+            display: none;
+        }
+
+        #gameTitle {
+            font-size: 72px;
+            color: #00cccc;
+            text-shadow: 0 0 20px #00cccc, 0 0 40px #00cccc;
+            margin-bottom: 20px;
+            letter-spacing: 4px;
+        }
+
+        #testInfo {
+            color: #aaa;
+            font-size: 18px;
+            margin-bottom: 30px;
+            text-align: center;
+            line-height: 1.6;
+        }
+
+        #testInfo strong {
+            color: #00cccc;
+        }
+
+        #startButton {
+            font-size: 32px;
+            padding: 20px 60px;
+            background: linear-gradient(45deg, #00cccc, #008888);
+            color: #000;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            box-shadow: 0 0 20px #00cccc;
+            transition: all 0.3s ease;
+        }
+
+        #startButton:hover {
+            transform: scale(1.1);
+            box-shadow: 0 0 30px #00cccc, 0 0 50px #00cccc;
+        }
+
+        #controls {
+            margin-bottom: 40px;
+            padding: 30px;
+            background: rgba(0, 100, 150, 0.3);
+            border: 2px solid #00cccc;
+            border-radius: 15px;
+            box-shadow: 0 0 20px rgba(0, 204, 204, 0.3);
+        }
+
+        #controls h2 {
+            color: #00cccc;
+            font-size: 28px;
+            margin: 0 0 20px 0;
+            text-align: center;
+            text-shadow: 0 0 10px #00cccc;
+        }
+
+        .control-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 10px 0;
+            color: #fff;
+            font-size: 18px;
+        }
+
+        .control-key {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 8px 16px;
+            border-radius: 5px;
+            border: 1px solid #00cccc;
+            font-weight: bold;
+            color: #00cccc;
+            min-width: 120px;
+            text-align: center;
+            box-shadow: 0 0 10px rgba(0, 204, 204, 0.2);
+        }
+
+        .control-description {
+            margin-left: 20px;
+            flex: 1;
+            text-align: left;
+        }
+
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="menu">
+        <h1 id="gameTitle">ENEMY TEST</h1>
+
+        <div id="testInfo">
+            Testing <strong>all enemy types</strong>.<br>
+            <strong>Blue</strong> (dash), <strong>Purple</strong> (chase), <strong>Sentinel</strong> (activate), <strong>Turret</strong> (shoot),<br>
+            <strong>Watcher</strong> (vision cone), <strong>Screamer</strong> (alertness gauge), <strong>Phantom</strong> (evades bullets).
+        </div>
+
+        <div id="controls">
+            <h2>CONTROLS</h2>
+            <div class="control-row">
+                <span class="control-key">W A S D</span>
+                <span class="control-description">Move</span>
+            </div>
+            <div class="control-row">
+                <span class="control-key">Mouse</span>
+                <span class="control-description">Aim</span>
+            </div>
+            <div class="control-row">
+                <span class="control-key">Left Click</span>
+                <span class="control-description">Shoot</span>
+            </div>
+        </div>
+
+        <button id="startButton">Start Test</button>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="enemies.js"></script>
+    <script src="game.js"></script>
+    <script>
+        // Draw legend on canvas
+        const legendEntries = [
+            { color: '#0000ff', shape: 'circle', name: 'Blue', desc: 'Dash attack' },
+            { color: '#9932cc', shape: 'circle', name: 'Purple', desc: 'Chase' },
+            { color: '#0000ff', shape: 'circle', name: 'Sentinel', desc: 'Activates on hit' },
+            { color: '#ff8c00', shape: 'square', name: 'Turret', desc: 'Stationary shooter' },
+            { color: '#00cccc', shape: 'circle', name: 'Watcher', desc: 'Vision cone' },
+            { color: '#ff4444', shape: 'circle', name: 'Screamer', desc: 'Alert gauge' },
+            { color: '#44aaff', shape: 'circle', name: 'Phantom', desc: 'Evades bullets' },
+        ];
+
+        function drawLegend() {
+            if (!gameStarted || gameOver) return;
+
+            const padding = 10;
+            const rowHeight = 20;
+            const swatchSize = 10;
+            const boxWidth = 180;
+            const boxHeight = padding * 2 + 18 + legendEntries.length * rowHeight;
+            const x = canvas.width - boxWidth - 12;
+            const y = 12;
+
+            // Background
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.roundRect(x, y, boxWidth, boxHeight, 6);
+            ctx.fill();
+            ctx.stroke();
+
+            // Title
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+            ctx.font = 'bold 10px Arial';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            ctx.fillText('ENEMIES', x + padding, y + padding);
+
+            // Entries
+            for (let i = 0; i < legendEntries.length; i++) {
+                const entry = legendEntries[i];
+                const rowY = y + padding + 18 + i * rowHeight;
+                const swatchX = x + padding;
+                const swatchY = rowY + 2;
+
+                // Swatch
+                ctx.fillStyle = entry.color;
+                if (entry.shape === 'square') {
+                    ctx.fillRect(swatchX, swatchY, swatchSize, swatchSize);
+                } else {
+                    ctx.beginPath();
+                    ctx.arc(swatchX + swatchSize / 2, swatchY + swatchSize / 2, swatchSize / 2, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                // Name
+                ctx.fillStyle = '#cccccc';
+                ctx.font = 'bold 12px Arial';
+                ctx.textBaseline = 'top';
+                ctx.fillText(entry.name, swatchX + swatchSize + 8, rowY + 1);
+
+                // Description
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+                ctx.font = '10px Arial';
+                const nameWidth = ctx.measureText(entry.name).width;
+                ctx.fillText(entry.desc, swatchX + swatchSize + 8 + nameWidth + 6, rowY + 3);
+            }
+        }
+
+        // Hook legend into game loop
+        const _origGameLoop = gameLoop;
+        gameLoop = function() {
+            _origGameLoop();
+            drawLegend();
+        };
+
+        // Override spawnEnemies to spawn one of each enemy type for testing
+        spawnEnemies = function() {
+            enemies.length = 0;
+            goldDrops.length = 0;
+            turretBullets.length = 0;
+            mines.length = 0;
+            isBossLevel = false;
+
+            player.money = 0;
+            player.moneyRequired = 5;
+
+            function randomPos() {
+                let x, y;
+                do {
+                    x = Math.random() * (canvas.width - 200) + 100;
+                    y = Math.random() * (canvas.height - 200) + 100;
+                } while (Math.hypot(x - player.x, y - player.y) < 250);
+                return { x, y };
+            }
+
+            // Blue - dash attacker
+            let pos = randomPos();
+            const blue = enemyManager.createEnemy('blue', pos.x, pos.y);
+            blue.vx = 0;
+            blue.vy = 0;
+            blue.state = 'pursue';
+            enemies.push(blue);
+
+            // Purple - chase attacker
+            pos = randomPos();
+            const purple = enemyManager.createEnemy('purple', pos.x, pos.y);
+            purple.vx = 0;
+            purple.vy = 0;
+            purple.state = 'idle';
+            enemies.push(purple);
+
+            // Sentinel - activation-based
+            pos = randomPos();
+            const sentinel = enemyManager.createEnemy('sentinel', pos.x, pos.y);
+            sentinel.vx = 0;
+            sentinel.vy = 0;
+            enemies.push(sentinel);
+
+            // Turret - stationary shooter
+            pos = randomPos();
+            const turret = enemyManager.createEnemy('turret', pos.x, pos.y);
+            turret.vx = 0;
+            turret.vy = 0;
+            enemies.push(turret);
+
+            // Watcher - vision cone stalker
+            pos = randomPos();
+            const watcher = enemyManager.createEnemy('watcher', pos.x, pos.y);
+            watcher.vx = 0;
+            watcher.vy = 0;
+            watcher.state = 'idle';
+            watcher.facingAngle = Math.PI / 4;
+            enemies.push(watcher);
+
+            // Screamer - alertness alarm
+            pos = randomPos();
+            const screamer = enemyManager.createEnemy('screamer', pos.x, pos.y);
+            screamer.vx = 0;
+            screamer.vy = 0;
+            screamer.state = 'idle';
+            screamer.facingAngle = Math.PI;
+            enemies.push(screamer);
+
+            // Phantom - bullet evader
+            pos = randomPos();
+            const phantom = enemyManager.createEnemy('phantom', pos.x, pos.y);
+            phantom.vx = 0;
+            phantom.vy = 0;
+            phantom.state = 'pursue';
+            enemies.push(phantom);
+        };
+    </script>
+</body>
+</html>

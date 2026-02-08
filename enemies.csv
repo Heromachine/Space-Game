@@ -1,7 +1,10 @@
-type,minLevel,cost,radius,size,color,normalSpeed,dashSpeed,activationRadius,dashRadius,dashCooldown,maxHealth,damage,shootCooldown,bulletSpeed,bulletRadius,doublesEvery
-blue,1,0,25,,#0000ff,1,8,,200,1000,50,10,,,,
-purple,1,0,15,,#9932cc,3,,250,,,25,5,,,,
-sentinel,1,0,20,,#0000ff,2.5,,,,,30,7,,,,10
-turret,5,0,,30,#ff8c00,0,,,,,100,8,2000,12,6,
-boss,10,0,,80,#ffff00,1,6,,250,2000,500,15,,,,
-boss-turret,10,0,,30,#ff8c00,0,,,,,100,8,2000,12,6,
+type,minLevel,cost,radius,size,color,normalSpeed,dashSpeed,activationRadius,dashRadius,dashCooldown,maxHealth,damage,shootCooldown,bulletSpeed,bulletRadius,doublesEvery,fov,sightRange,peripheralFov,turnSpeed,alertRate,alertDecayRate,screamRadius,evadeGaugeMax,evadeRate,evadeRange
+blue,1,0,25,,#0000ff,1,8,,200,1000,50,10,,,,,,,,,,,,,,
+purple,1,0,15,,#9932cc,3,,250,,,25,5,,,,,,,,,,,,,,
+sentinel,1,0,20,,#0000ff,2.5,,,,,30,7,,,,10,,,,,,,,,,
+turret,5,0,,30,#ff8c00,0,,,,,100,8,2000,12,6,,,,,,,,,,
+boss,10,0,,80,#ffff00,1,6,,250,2000,500,15,,,,,,,,,,,,,,
+boss-turret,10,0,,30,#ff8c00,0,,,,,100,8,2000,12,6,,,,,,,,,,
+watcher,1,0,20,,#00cccc,2,,,,,40,8,,,,,45,300,90,0.8,,,,,,
+screamer,1,0,18,,#ff4444,1.5,,,,,30,5,,,,,30,450,40,0.6,25,15,400,,,
+phantom,1,0,22,,#44aaff,1.5,7,,180,1200,35,8,,,,,,,,,,,,100,35,120

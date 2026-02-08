@@ -119,6 +119,42 @@ class EnemyManager {
             enemy.bulletRadius = config.bulletRadius;
         }
 
+        if (config.fov !== undefined) {
+            enemy.fov = config.fov * (Math.PI / 180); // Convert degrees to radians
+        }
+
+        if (config.peripheralFov !== undefined) {
+            enemy.peripheralFov = config.peripheralFov * (Math.PI / 180);
+        }
+
+        if (config.turnSpeed !== undefined) {
+            enemy.turnSpeed = config.turnSpeed; // Radians per second for cautious rotation
+        }
+
+        if (config.sightRange !== undefined) {
+            enemy.sightRange = config.sightRange;
+            enemy.facingAngle = 0; // Default facing right, can be overridden after creation
+        }
+
+        if (config.alertRate !== undefined) {
+            enemy.alertRate = config.alertRate;
+            enemy.alertDecayRate = config.alertDecayRate || 10;
+            enemy.alertness = 0;
+            enemy.screamRadius = config.screamRadius || 300;
+            enemy.isScreaming = false;
+            enemy.screamTime = 0;
+            enemy.screamCooldown = 0;
+        }
+
+        if (config.evadeGaugeMax !== undefined) {
+            enemy.evadeGaugeMax = config.evadeGaugeMax;
+            enemy.evadeRate = config.evadeRate || 35;
+            enemy.evadeRange = config.evadeRange || 120;
+            enemy.evadeGauge = 0;
+            enemy.evadeDir = Math.random() < 0.5 ? 1 : -1;
+            enemy.evadeTrail = [];
+        }
+
         // Boss turret specific properties
         if (isBossTurret) {
             enemy.attachedToBoss = true;
@@ -160,6 +196,15 @@ class EnemyManager {
             case 'boss':
                 // Only spawn on multiples of 10
                 return (level % 10 === 0) ? 1 : 0;
+
+            case 'watcher':
+                return 0; // Not in normal levels - test only
+
+            case 'screamer':
+                return 0; // Not in normal levels - test only
+
+            case 'phantom':
+                return 0; // Not in normal levels - test only
 
             default:
                 return 0;
