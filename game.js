@@ -57,6 +57,13 @@ let rightMouseDown = false;
 let leftMouseDown = false;
 let lastShotTime = 0;
 let shootCooldown = 200; // milliseconds between shots
+
+// Gamepad state
+let gamepadIndex = null;
+let prevGP = {}; // previous frame button states for edge detection
+let gpMoving = false; // was gamepad controlling movement last frame
+let isCharging = false; // tracer gun charge state
+let chargeStartTime = 0;
 let collectionPhase = false;
 let collectionStartTime = 0;
 let collectionDuration = 10000; // 10 seconds in milliseconds
@@ -82,7 +89,22 @@ const player = {
     moneyRequired: 0,
     totalMoney: 0, // Total coins collected across all levels
     mines: 5, // Current mine count
-    maxMines: 5 // Maximum mines player can have
+    maxMines: 5, // Maximum mines player can have
+    weapons: [
+        { type: 'pistol', ammo: 6 },
+        { type: 'ar', ammo: 35 }
+    ],
+    activeWeapon: 0
+};
+
+// Weapon definitions
+const weaponTypes = {
+    pistol: { name: 'Pistol', fireMode: 'semi', ammo: 6, cooldown: 300, bulletSpeed: 10, damage: 10, bulletRadius: 5, color: '#ffff00' },
+    ar: { name: 'AR', fireMode: 'auto', ammo: 35, cooldown: 120, bulletSpeed: 12, damage: 7, bulletRadius: 4, color: '#ffaa00' },
+    sniper: { name: 'Sniper', fireMode: 'single', ammo: 5, cooldown: 800, bulletSpeed: 25, damage: 40, bulletRadius: 3, color: '#ff4444' },
+    tracer: { name: 'Tracer', fireMode: 'charge', ammo: 3, cooldown: 0, chargeTime: 1500, bulletSpeed: 18, damage: 30, bulletRadius: 6, color: '#00ffaa', homingSpeed: 15, coneAngle: 0.4, coneRange: 300, shieldMultiplier: 1, alien: true },
+    plasmaRifle: { name: 'P.Rifle', fireMode: 'auto', ammo: 40, cooldown: 80, bulletSpeed: 14, damage: 5, bulletRadius: 4, color: '#ff00ff', shieldMultiplier: 2.5, regenCooldown: 10000, alien: true },
+    plasmaPistol: { name: 'P.Pistol', fireMode: 'semi', ammo: 12, cooldown: 400, bulletSpeed: 11, damage: 12, bulletRadius: 5, color: '#cc00ff', shieldMultiplier: 2, regenCooldown: 10000, alien: true }
 };
 
 // Bullets array
@@ -122,6 +144,11 @@ const goldConfig = {
     collectionRadius: 30
 };
 
+// Weapon drops on the ground
+const weaponDrops = [];
+let pickupProgress = 0;
+let pickupTarget = null;
+
 // Event listeners
 window.addEventListener('resize', () => {
     updateCanvasSize();
@@ -142,10 +169,23 @@ window.addEventListener('keydown', (e) => {
     if (e.key === 'b' && gameStarted && !gameOver) {
         purchaseMine();
     }
+
+    // Switch weapon on Q key
+    if (e.key === 'q' && gameStarted && !gameOver) {
+        player.activeWeapon = player.activeWeapon === 0 ? 1 : 0;
+        isCharging = false;
+    }
 });
 
 window.addEventListener('keyup', (e) => {
     keys[e.key.toLowerCase()] = false;
+});
+
+window.addEventListener('wheel', (e) => {
+    if (gameStarted && !gameOver) {
+        player.activeWeapon = player.activeWeapon === 0 ? 1 : 0;
+        isCharging = false;
+    }
 });
 
 window.addEventListener('mousemove', (e) => {
@@ -162,7 +202,16 @@ window.addEventListener('mousedown', (e) => {
             // Guard smash
             performGuardSmash();
         } else {
-            shootBullet();
+            const wDef = weaponTypes[player.weapons[player.activeWeapon].type];
+            if (wDef.fireMode === 'charge') {
+                // Start charging tracer
+                if (player.weapons[player.activeWeapon].ammo > 0) {
+                    isCharging = true;
+                    chargeStartTime = Date.now();
+                }
+            } else if (Date.now() - lastShotTime >= wDef.cooldown) {
+                shootBullet();
+            }
         }
     } else if (e.button === 2 && gameStarted && !gameOver) { // Right click
         rightMouseDown = true;
@@ -173,6 +222,10 @@ window.addEventListener('mousedown', (e) => {
 window.addEventListener('mouseup', (e) => {
     if (e.button === 0) { // Left mouse release
         leftMouseDown = false;
+        if (isCharging) {
+            fireTracerBullet();
+            isCharging = false;
+        }
     } else if (e.button === 2) { // Right mouse release
         rightMouseDown = false;
         isGuarding = false;
@@ -181,6 +234,14 @@ window.addEventListener('mouseup', (e) => {
 
 window.addEventListener('contextmenu', (e) => {
     e.preventDefault(); // Prevent right-click context menu
+});
+
+// Gamepad connection
+window.addEventListener('gamepadconnected', (e) => {
+    gamepadIndex = e.gamepad.index;
+});
+window.addEventListener('gamepaddisconnected', (e) => {
+    if (gamepadIndex === e.gamepad.index) gamepadIndex = null;
 });
 
 window.addEventListener('click', (e) => {
@@ -269,6 +330,25 @@ function spawnEnemies() {
     goldDrops.length = 0; // Clear existing gold
     turretBullets.length = 0; // Clear turret bullets
     mines.length = 0; // Clear mines
+    weaponDrops.length = 0; // Clear weapon drops
+    pickupProgress = 0;
+    pickupTarget = null;
+
+    // Refill ammo for held weapons
+    for (let w = 0; w < player.weapons.length; w++) {
+        player.weapons[w].ammo = weaponTypes[player.weapons[w].type].ammo;
+        player.weapons[w].depletedTime = null;
+    }
+
+    // Spawn human weapons not held by the player on the ground (alien weapons only drop from kills)
+    const heldTypes = player.weapons.map(w => w.type);
+    for (const wType of Object.keys(weaponTypes)) {
+        if (!heldTypes.includes(wType) && !weaponTypes[wType].alien) {
+            const wpnX = Math.random() * (canvas.width - 200) + 100;
+            const wpnY = Math.random() * (canvas.height - 200) + 100;
+            weaponDrops.push({ x: wpnX, y: wpnY, type: wType });
+        }
+    }
 
     // Check if this is a boss level (every 10 levels)
     isBossLevel = enemyManager.isBossLevel(currentLevel);
@@ -389,14 +469,71 @@ function spawnEnemies() {
 
 // Shoot bullet function
 function shootBullet() {
+    const weapon = player.weapons[player.activeWeapon];
+    const wDef = weaponTypes[weapon.type];
+    if (weapon.ammo <= 0) return;
+
+    weapon.ammo--;
     const angle = Math.atan2(mouseY - player.y, mouseX - player.x);
     bullets.push({
         x: player.x,
         y: player.y,
-        vx: Math.cos(angle) * bulletSpeed,
-        vy: Math.sin(angle) * bulletSpeed,
-        radius: bulletRadius,
-        color: '#ffff00' // yellow
+        vx: Math.cos(angle) * wDef.bulletSpeed,
+        vy: Math.sin(angle) * wDef.bulletSpeed,
+        radius: wDef.bulletRadius,
+        color: wDef.color,
+        damage: wDef.damage,
+        shieldMultiplier: wDef.shieldMultiplier || 1
+    });
+    lastShotTime = Date.now();
+}
+
+// Fire tracer bullet (homing) after charge release
+function fireTracerBullet() {
+    const weapon = player.weapons[player.activeWeapon];
+    const wDef = weaponTypes[weapon.type];
+    if (weapon.ammo <= 0) return;
+
+    weapon.ammo--;
+    const angle = player.rotation;
+    const halfCone = wDef.coneAngle;
+    const range = wDef.coneRange;
+
+    // Find closest enemy within the targeting cone
+    let bestTarget = null;
+    let bestDist = Infinity;
+    for (let i = 0; i < enemies.length; i++) {
+        const ex = enemies[i].x - player.x;
+        const ey = enemies[i].y - player.y;
+        const dist = Math.hypot(ex, ey);
+        if (dist > range) continue;
+
+        // Check if enemy is within cone angle
+        const enemyAngle = Math.atan2(ey, ex);
+        let angleDiff = enemyAngle - angle;
+        // Normalize to [-PI, PI]
+        while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+        while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+
+        if (Math.abs(angleDiff) <= halfCone && dist < bestDist) {
+            bestDist = dist;
+            bestTarget = enemies[i];
+        }
+    }
+
+    bullets.push({
+        x: player.x,
+        y: player.y,
+        vx: Math.cos(angle) * wDef.bulletSpeed,
+        vy: Math.sin(angle) * wDef.bulletSpeed,
+        radius: wDef.bulletRadius,
+        color: wDef.color,
+        damage: wDef.damage,
+        shieldMultiplier: wDef.shieldMultiplier || 1,
+        homing: true,
+        target: bestTarget,
+        homingSpeed: wDef.homingSpeed,
+        trail: []
     });
     lastShotTime = Date.now();
 }
@@ -529,8 +666,19 @@ function updateMines() {
                             enemy.state = 'chase';
                         }
 
-                        // Apply damage
-                        enemy.health -= mineConfig.damagePerTick;
+                        // Apply damage (shield absorbs first)
+                        if (enemy.shield !== undefined && enemy.shield > 0) {
+                            enemy.lastShieldDamageTime = currentTime;
+                            if (enemy.shield >= mineConfig.damagePerTick) {
+                                enemy.shield -= mineConfig.damagePerTick;
+                            } else {
+                                const overflow = mineConfig.damagePerTick - enemy.shield;
+                                enemy.shield = 0;
+                                enemy.health -= overflow;
+                            }
+                        } else {
+                            enemy.health -= mineConfig.damagePerTick;
+                        }
 
                         // Check if enemy is dead
                         if (enemy.health <= 0) {
@@ -580,7 +728,7 @@ function updateMines() {
                 const distance = Math.hypot(dx, dy);
 
                 // Get enemy radius
-                const enemyRadius = (enemy.type === 'turret' || enemy.type === 'boss-turret-left' || enemy.type === 'boss-turret-right') ? enemy.size / 2 : (enemy.type === 'boss' ? enemy.size / 2 : enemy.radius);
+                const enemyRadius = enemy.type === 'boss' ? enemy.size / 2 : enemy.radius;
 
                 if (distance < mine.radius + enemyRadius) {
                     // Trigger explosion
@@ -594,8 +742,120 @@ function updateMines() {
     }
 }
 
+// Poll Xbox gamepad and map to game inputs
+function pollGamepad() {
+    if (gamepadIndex === null) return;
+    const gp = navigator.getGamepads()[gamepadIndex];
+    if (!gp) return;
+    if (!gameStarted || gameOver) return;
+
+    const DEADZONE = 0.15;
+    const TRIGGER_THRESHOLD = 0.5;
+
+    // --- Left stick: movement ---
+    const lx = Math.abs(gp.axes[0]) > DEADZONE ? gp.axes[0] : 0;
+    const ly = Math.abs(gp.axes[1]) > DEADZONE ? gp.axes[1] : 0;
+    if (lx !== 0 || ly !== 0) {
+        // Stick active — set movement keys
+        keys['a'] = lx < 0;
+        keys['d'] = lx > 0;
+        keys['w'] = ly < 0;
+        keys['s'] = ly > 0;
+        gpMoving = true;
+    } else if (gpMoving) {
+        // Stick just returned to center — clear movement keys
+        keys['w'] = false;
+        keys['s'] = false;
+        keys['a'] = false;
+        keys['d'] = false;
+        gpMoving = false;
+    }
+
+    // --- Right stick: aim ---
+    const rx = Math.abs(gp.axes[2]) > DEADZONE ? gp.axes[2] : 0;
+    const ry = Math.abs(gp.axes[3]) > DEADZONE ? gp.axes[3] : 0;
+    if (rx !== 0 || ry !== 0) {
+        mouseX = player.x + rx * 200;
+        mouseY = player.y + ry * 200;
+    }
+
+    // Helper: check if button is pressed this frame but wasn't last frame
+    const pressed = (i) => gp.buttons[i].pressed && !prevGP[i];
+    const held = (i) => gp.buttons[i].pressed;
+    const triggerVal = (i) => gp.buttons[i].value;
+
+    // --- RT (7): Shoot ---
+    const rtPressed = triggerVal(7) > TRIGGER_THRESHOLD;
+    const rtWasPressed = prevGP[7] || false;
+    const wDefGP = weaponTypes[player.weapons[player.activeWeapon].type];
+    if (rtPressed) {
+        leftMouseDown = true;
+        if (!rtWasPressed) {
+            // Edge: trigger just pulled
+            if (!isGuarding) {
+                if (wDefGP.fireMode === 'charge') {
+                    if (player.weapons[player.activeWeapon].ammo > 0) {
+                        isCharging = true;
+                        chargeStartTime = Date.now();
+                    }
+                } else if (Date.now() - lastShotTime >= wDefGP.cooldown) {
+                    shootBullet();
+                }
+            } else {
+                performGuardSmash();
+            }
+        }
+    } else {
+        if (rtWasPressed && isCharging) {
+            // Trigger released while charging — fire tracer
+            fireTracerBullet();
+            isCharging = false;
+        }
+        // Only clear if mouse isn't also holding
+        if (!leftMouseDown || rtWasPressed) leftMouseDown = false;
+    }
+
+    // --- LT (6): Guard ---
+    const ltPressed = triggerVal(6) > TRIGGER_THRESHOLD;
+    if (ltPressed) {
+        rightMouseDown = true;
+        isGuarding = true;
+    } else if (prevGP[6]) {
+        rightMouseDown = false;
+        isGuarding = false;
+    }
+
+    // --- Y (3): Switch weapon ---
+    if (pressed(3)) {
+        player.activeWeapon = player.activeWeapon === 0 ? 1 : 0;
+        isCharging = false;
+    }
+
+    // --- A (0): Place mine ---
+    if (pressed(0)) {
+        placeMine();
+    }
+
+    // --- B (1): Buy mine ---
+    if (pressed(1)) {
+        purchaseMine();
+    }
+
+    // --- X (2): Pickup weapon (hold) ---
+    keys['r'] = held(2) ? true : keys['r'];
+
+    // Save button states for next frame edge detection
+    prevGP = {};
+    for (let i = 0; i < gp.buttons.length; i++) {
+        prevGP[i] = gp.buttons[i].pressed || gp.buttons[i].value > TRIGGER_THRESHOLD;
+    }
+}
+
 // Update player position
 function updatePlayer() {
+    // Poll gamepad input
+    pollGamepad();
+
     // WASD movement (multiply by deltaTime for frame-independent movement)
     // Speed is in pixels per second, so multiply by deltaTime (seconds per frame)
     const moveSpeed = player.speed * 60; // Convert to pixels per second (5 * 60 = 300 px/s)
@@ -617,11 +877,15 @@ function updatePlayer() {
         if (player.stamina > player.maxStamina) player.stamina = player.maxStamina;
     }
 
-    // Auto-fire when holding left mouse button
+    // Auto-fire when holding left mouse button (only for full-auto weapons)
     if (leftMouseDown && !isGuarding) {
-        const currentTime = Date.now();
-        if (currentTime - lastShotTime >= shootCooldown) {
-            shootBullet();
+        const weapon = player.weapons[player.activeWeapon];
+        const wDef = weaponTypes[weapon.type];
+        if (wDef.fireMode === 'auto') {
+            const currentTime = Date.now();
+            if (currentTime - lastShotTime >= wDef.cooldown) {
+                shootBullet();
+            }
         }
     }
 
@@ -636,11 +900,110 @@ function updatePlayer() {
             goldDrops.splice(i, 1);
         }
     }
+
+    // Weapon pickup (hold R near a ground weapon)
+    if (keys['r'] && weaponDrops.length > 0) {
+        // Find nearest weapon drop within range
+        let nearestDrop = null;
+        let nearestDist = Infinity;
+        for (let i = 0; i < weaponDrops.length; i++) {
+            const dx = player.x - weaponDrops[i].x;
+            const dy = player.y - weaponDrops[i].y;
+            const dist = Math.hypot(dx, dy);
+            if (dist < 40 && dist < nearestDist) {
+                nearestDist = dist;
+                nearestDrop = weaponDrops[i];
+            }
+        }
+
+        if (nearestDrop) {
+            if (pickupTarget !== nearestDrop) {
+                pickupTarget = nearestDrop;
+                pickupProgress = 0;
+            }
+            pickupProgress += deltaTime / 1.5;
+            if (pickupProgress >= 1) {
+                // Swap weapon: drop current, pick up ground weapon
+                const oldWeapon = player.weapons[player.activeWeapon];
+                const dropX = nearestDrop.x;
+                const dropY = nearestDrop.y;
+                const dropType = nearestDrop.type;
+
+                // Replace ground weapon with player's current weapon
+                nearestDrop.x = dropX;
+                nearestDrop.y = dropY;
+                nearestDrop.type = oldWeapon.type;
+
+                // Give player the picked up weapon with full ammo
+                player.weapons[player.activeWeapon] = {
+                    type: dropType,
+                    ammo: weaponTypes[dropType].ammo
+                };
+
+                pickupProgress = 0;
+                pickupTarget = null;
+            }
+        } else {
+            pickupProgress = 0;
+            pickupTarget = null;
+        }
+    } else {
+        pickupProgress = 0;
+        pickupTarget = null;
+    }
+
+    // Plasma weapon ammo auto-regen (10s cooldown after depletion)
+    for (let w = 0; w < player.weapons.length; w++) {
+        const wpn = player.weapons[w];
+        const wpnDef = weaponTypes[wpn.type];
+        if (wpnDef.regenCooldown) {
+            if (wpn.ammo <= 0) {
+                if (!wpn.depletedTime) wpn.depletedTime = Date.now();
+                if (Date.now() - wpn.depletedTime >= wpnDef.regenCooldown) {
+                    wpn.ammo = wpnDef.ammo;
+                    wpn.depletedTime = null;
+                }
+            } else {
+                wpn.depletedTime = null;
+            }
+        }
+    }
 }
 
 // Update bullets
 function updateBullets() {
     for (let i = bullets.length - 1; i >= 0; i--) {
+        // Homing bullet steering
+        if (bullets[i].homing && bullets[i].target) {
+            // Check if target is still alive
+            if (enemies.indexOf(bullets[i].target) === -1) {
+                bullets[i].target = null; // Target died, go straight
+            } else {
+                // Steer toward target
+                const tdx = bullets[i].target.x - bullets[i].x;
+                const tdy = bullets[i].target.y - bullets[i].y;
+                const targetAngle = Math.atan2(tdy, tdx);
+                const speed = Math.hypot(bullets[i].vx, bullets[i].vy);
+                const currentAngle = Math.atan2(bullets[i].vy, bullets[i].vx);
+
+                // Smooth turn toward target
+                let angleDiff = targetAngle - currentAngle;
+                while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+                while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+                const turnRate = bullets[i].homingSpeed * deltaTime;
+                const newAngle = currentAngle + Math.sign(angleDiff) * Math.min(Math.abs(angleDiff), turnRate);
+
+                bullets[i].vx = Math.cos(newAngle) * speed;
+                bullets[i].vy = Math.sin(newAngle) * speed;
+            }
+
+            // Store trail position
+            if (bullets[i].trail) {
+                bullets[i].trail.push({ x: bullets[i].x, y: bullets[i].y });
+                if (bullets[i].trail.length > 8) bullets[i].trail.shift();
+            }
+        }
+
         bullets[i].x += bullets[i].vx * deltaTime * 60; // Scale velocity by deltaTime
         bullets[i].y += bullets[i].vy * deltaTime * 60;
 
@@ -652,9 +1015,7 @@ function updateBullets() {
 
             // Check collision based on enemy type
             let enemyRadius;
-            if (enemies[j].type === 'turret' || enemies[j].type === 'boss-turret-left' || enemies[j].type === 'boss-turret-right') {
-                enemyRadius = enemies[j].size / 2;
-            } else if (enemies[j].type === 'boss') {
+            if (enemies[j].type === 'boss-turret-left' || enemies[j].type === 'boss-turret-right' || enemies[j].type === 'boss') {
                 enemyRadius = enemies[j].size / 2;
             } else {
                 enemyRadius = enemies[j].radius;
@@ -668,7 +1029,7 @@ function updateBullets() {
                 }
 
                 // Calculate damage
-                let damage = 10;
+                let damage = bullets[i].damage || 10;
 
                 // Boss takes different damage based on turrets alive
                 if (enemies[j].type === 'boss') {
@@ -685,8 +1046,22 @@ function updateBullets() {
                     }
                 }
 
-                // Hit enemy
-                enemies[j].health -= damage;
+                // Hit enemy (shield absorbs first, with multiplier)
+                if (enemies[j].shield !== undefined && enemies[j].shield > 0) {
+                    enemies[j].lastShieldDamageTime = Date.now();
+                    const shieldDmg = damage * (bullets[i].shieldMultiplier || 1);
+                    if (enemies[j].shield >= shieldDmg) {
+                        enemies[j].shield -= shieldDmg;
+                    } else {
+                        // Shield broken — overflow uses base damage, not multiplied
+                        const shieldHad = enemies[j].shield;
+                        const baseDmgUsed = shieldHad / (bullets[i].shieldMultiplier || 1);
+                        enemies[j].shield = 0;
+                        enemies[j].health -= (damage - baseDmgUsed);
+                    }
+                } else {
+                    enemies[j].health -= damage;
+                }
                 bullets.splice(i, 1);
 
                 // Remove enemy if dead and drop gold
@@ -720,6 +1095,13 @@ function updateBullets() {
                             x: enemies[j].x,
                             y: enemies[j].y
                         });
+
+                        // 25% chance to drop an alien weapon
+                        if (Math.random() < 0.25) {
+                            const alienWeapons = ['tracer', 'plasmaRifle', 'plasmaPistol'];
+                            const dropType = alienWeapons[Math.floor(Math.random() * alienWeapons.length)];
+                            weaponDrops.push({ x: enemies[j].x, y: enemies[j].y, type: dropType });
+                        }
                     }
                     enemies.splice(j, 1);
                 }
@@ -1107,23 +1489,43 @@ function updateEnemies() {
                 }
             }
         } else if (enemy.type === 'turret') {
-            // Turret behavior - stationary but shoots at player
+            // Turret behavior - stationary, vision cone detection, shoots when player in main cone
             enemy.vx = 0;
             enemy.vy = 0;
 
-            // Shoot at player if cooldown is ready
-            if (currentTime - enemy.lastShotTime >= enemy.shootCooldown) {
-                const angle = Math.atan2(dy, dx);
-                turretBullets.push({
-                    x: enemy.x,
-                    y: enemy.y,
-                    vx: Math.cos(angle) * enemy.bulletSpeed,
-                    vy: Math.sin(angle) * enemy.bulletSpeed,
-                    radius: enemy.bulletRadius,
-                    color: '#ff0000', // red bullets
-                    damage: enemy.damage
-                });
-                enemy.lastShotTime = currentTime;
+            const angleToPlayer = Math.atan2(dy, dx);
+            let angleDiff = angleToPlayer - enemy.facingAngle;
+            angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
+
+            const inRange = distance <= enemy.sightRange;
+            const inMainCone = Math.abs(angleDiff) <= enemy.fov / 2;
+            const totalFov = enemy.fov + enemy.peripheralFov;
+            const inPeripheral = Math.abs(angleDiff) <= totalFov / 2;
+
+            if (inRange && inMainCone) {
+                // Player in main cone - track and shoot
+                enemy.state = 'alert';
+                enemy.facingAngle = angleToPlayer;
+
+                if (currentTime - enemy.lastShotTime >= enemy.shootCooldown) {
+                    turretBullets.push({
+                        x: enemy.x,
+                        y: enemy.y,
+                        vx: Math.cos(angleToPlayer) * enemy.bulletSpeed,
+                        vy: Math.sin(angleToPlayer) * enemy.bulletSpeed,
+                        radius: enemy.bulletRadius,
+                        color: '#ff0000',
+                        damage: enemy.damage
+                    });
+                    enemy.lastShotTime = currentTime;
+                }
+            } else if (inRange && inPeripheral) {
+                // Peripheral - rotate toward player
+                enemy.state = 'caution';
+                const rotateDir = angleDiff > 0 ? 1 : -1;
+                enemy.facingAngle += rotateDir * enemy.turnSpeed * deltaTime;
+            } else {
+                enemy.state = 'idle';
             }
         } else if (enemy.type === 'boss') {
             // Boss behavior - similar to blue enemy with dash
@@ -1181,6 +1583,14 @@ function updateEnemies() {
         enemy.x += enemy.vx * deltaTime * 60;
         enemy.y += enemy.vy * deltaTime * 60;
 
+        // Shield regeneration
+        if (enemy.shield !== undefined && enemy.shield < enemy.shieldMax) {
+            if (currentTime - enemy.lastShieldDamageTime >= enemy.shieldRegenDelay) {
+                enemy.shield += enemy.shieldRegen * deltaTime;
+                if (enemy.shield > enemy.shieldMax) enemy.shield = enemy.shieldMax;
+            }
+        }
+
         // Check collision with other enemies to prevent overlapping
         for (let k = 0; k < enemies.length; k++) {
             if (k === i) continue; // Skip self
@@ -1191,8 +1601,8 @@ function updateEnemies() {
             const distance2 = Math.hypot(dx2, dy2);
 
             // Get radii for both enemies
-            const enemyRadius1 = (enemy.type === 'turret' || enemy.type === 'boss-turret-left' || enemy.type === 'boss-turret-right') ? enemy.size / 2 : (enemy.type === 'boss' ? enemy.size / 2 : enemy.radius);
-            const enemyRadius2 = (otherEnemy.type === 'turret' || otherEnemy.type === 'boss-turret-left' || otherEnemy.type === 'boss-turret-right') ? otherEnemy.size / 2 : (otherEnemy.type === 'boss' ? otherEnemy.size / 2 : otherEnemy.radius);
+            const enemyRadius1 = enemy.type === 'boss' ? enemy.size / 2 : enemy.radius;
+            const enemyRadius2 = otherEnemy.type === 'boss' ? otherEnemy.size / 2 : otherEnemy.radius;
 
             const minDistance = enemyRadius1 + enemyRadius2;
 
@@ -1216,7 +1626,7 @@ function updateEnemies() {
         }
 
         // Check collision with player (only for non-turret, non-boss-turret enemies)
-        const collisionRadius = (enemy.type === 'turret' || enemy.type === 'boss-turret-left' || enemy.type === 'boss-turret-right') ? enemy.size / 2 : (enemy.type === 'boss' ? enemy.size / 2 : enemy.radius);
+        const collisionRadius = enemy.type === 'boss' ? enemy.size / 2 : enemy.radius;
         const isCollidableEnemy = enemy.type !== 'turret' && enemy.type !== 'boss-turret-left' && enemy.type !== 'boss-turret-right';
         if (distance < collisionRadius + player.size && !gameOver && isCollidableEnemy) {
             const damage = enemy.damage;
@@ -1378,6 +1788,12 @@ function restartGame() {
     player.stamina = player.maxStamina;
     player.totalMoney = 0; // Clear total money on game over
     player.mines = player.maxMines; // Reset mines to max
+    player.weapons = [
+        { type: 'pistol', ammo: weaponTypes.pistol.ammo },
+        { type: 'ar', ammo: weaponTypes.ar.ammo }
+    ];
+    player.activeWeapon = 0;
+    isCharging = false;
 
     // Clear bullets
     bullets.length = 0;
@@ -1434,6 +1850,20 @@ function drawPlayer() {
 // Draw bullets
 function drawBullets() {
     bullets.forEach(bullet => {
+        // Draw homing bullet trail
+        if (bullet.homing && bullet.trail && bullet.trail.length > 0) {
+            for (let t = 0; t < bullet.trail.length; t++) {
+                const alpha = (t + 1) / bullet.trail.length * 0.4;
+                const trailRadius = bullet.radius * (t + 1) / bullet.trail.length;
+                ctx.fillStyle = bullet.color;
+                ctx.globalAlpha = alpha;
+                ctx.beginPath();
+                ctx.arc(bullet.trail[t].x, bullet.trail[t].y, trailRadius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+        }
+
         // Add glow effect
         ctx.shadowBlur = 20;
         ctx.shadowColor = bullet.color;
@@ -1446,6 +1876,63 @@ function drawBullets() {
         // Reset shadow
         ctx.shadowBlur = 0;
     });
+}
+
+// Draw tracer gun charge effect (cone + growing orb)
+function drawChargeEffect() {
+    if (!isCharging) return;
+    const weapon = player.weapons[player.activeWeapon];
+    const wDef = weaponTypes[weapon.type];
+    if (wDef.fireMode !== 'charge') return;
+
+    const chargeProgress = Math.min((Date.now() - chargeStartTime) / wDef.chargeTime, 1);
+    const angle = player.rotation;
+
+    // Draw targeting cone
+    ctx.save();
+    ctx.globalAlpha = 0.15 + chargeProgress * 0.15;
+    ctx.fillStyle = wDef.color;
+    ctx.beginPath();
+    ctx.moveTo(player.x, player.y);
+    ctx.arc(player.x, player.y, wDef.coneRange * (0.3 + chargeProgress * 0.7), angle - wDef.coneAngle, angle + wDef.coneAngle);
+    ctx.closePath();
+    ctx.fill();
+
+    // Cone border
+    ctx.globalAlpha = 0.4 + chargeProgress * 0.3;
+    ctx.strokeStyle = wDef.color;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(player.x, player.y);
+    ctx.arc(player.x, player.y, wDef.coneRange * (0.3 + chargeProgress * 0.7), angle - wDef.coneAngle, angle + wDef.coneAngle);
+    ctx.closePath();
+    ctx.stroke();
+
+    // Draw charging orb at gun tip
+    const orbDist = 25;
+    const orbX = player.x + Math.cos(angle) * orbDist;
+    const orbY = player.y + Math.sin(angle) * orbDist;
+    const orbRadius = 3 + chargeProgress * 8;
+
+    // Pulsing glow
+    const pulse = 1 + Math.sin(Date.now() * 0.01) * 0.3;
+    ctx.shadowBlur = 15 * chargeProgress * pulse;
+    ctx.shadowColor = wDef.color;
+    ctx.globalAlpha = 0.5 + chargeProgress * 0.5;
+    ctx.fillStyle = wDef.color;
+    ctx.beginPath();
+    ctx.arc(orbX, orbY, orbRadius * pulse, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Bright core
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(orbX, orbY, orbRadius * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.shadowBlur = 0;
+    ctx.restore();
 }
 
 // Draw turret bullets
@@ -1529,15 +2016,75 @@ function drawWatcherGhosts() {
 function drawEnemies() {
     enemies.forEach(enemy => {
         if (enemy.type === 'turret' || enemy.type === 'boss-turret-left' || enemy.type === 'boss-turret-right') {
-            // Draw turret as orange square
+            const r = enemy.radius || enemy.size / 2;
+
+            // Draw vision cones (only for regular turret with FOV)
+            if (enemy.fov && enemy.sightRange) {
+                const coneStartAngle = enemy.facingAngle - enemy.fov / 2;
+                const coneEndAngle = enemy.facingAngle + enemy.fov / 2;
+                const totalFov = enemy.fov + enemy.peripheralFov;
+                const periStartAngle = enemy.facingAngle - totalFov / 2;
+                const periEndAngle = enemy.facingAngle + totalFov / 2;
+
+                // Peripheral zones (darker orange)
+                if (enemy.state === 'caution') {
+                    ctx.fillStyle = 'rgba(204, 100, 0, 0.08)';
+                    ctx.strokeStyle = 'rgba(204, 100, 0, 0.25)';
+                } else {
+                    ctx.fillStyle = 'rgba(204, 100, 0, 0.03)';
+                    ctx.strokeStyle = 'rgba(204, 100, 0, 0.10)';
+                }
+
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(enemy.x, enemy.y);
+                ctx.arc(enemy.x, enemy.y, enemy.sightRange, periStartAngle, coneStartAngle);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(enemy.x, enemy.y);
+                ctx.arc(enemy.x, enemy.y, enemy.sightRange, coneEndAngle, periEndAngle);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+
+                // Main cone (orange)
+                if (enemy.state === 'alert') {
+                    ctx.fillStyle = 'rgba(255, 140, 0, 0.12)';
+                    ctx.strokeStyle = 'rgba(255, 140, 0, 0.4)';
+                } else {
+                    ctx.fillStyle = 'rgba(255, 140, 0, 0.05)';
+                    ctx.strokeStyle = 'rgba(255, 140, 0, 0.15)';
+                }
+
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(enemy.x, enemy.y);
+                ctx.arc(enemy.x, enemy.y, enemy.sightRange, coneStartAngle, coneEndAngle);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+            }
+
+            // Draw turret as orange circle
             ctx.fillStyle = enemy.color;
-            ctx.fillRect(enemy.x - enemy.size / 2, enemy.y - enemy.size / 2, enemy.size, enemy.size);
+            ctx.beginPath();
+            ctx.arc(enemy.x, enemy.y, r, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Dark inner core
+            ctx.fillStyle = '#994400';
+            ctx.beginPath();
+            ctx.arc(enemy.x, enemy.y, r * 0.45, 0, Math.PI * 2);
+            ctx.fill();
 
             // Draw health bar for turret
-            const barWidth = enemy.size;
+            const barWidth = r * 2;
             const barHeight = 4;
             const barX = enemy.x - barWidth / 2;
-            const barY = enemy.y + enemy.size / 2 + 5;
+            const barY = enemy.y + r + 5;
 
             // Background
             ctx.fillStyle = '#333333';
@@ -1545,8 +2092,18 @@ function drawEnemies() {
 
             // Health
             const healthWidth = (barWidth * enemy.health) / enemy.maxHealth;
-            ctx.fillStyle = '#ff0000'; // red
+            ctx.fillStyle = '#ff0000';
             ctx.fillRect(barX, barY, healthWidth, barHeight);
+
+            // Shield bar (above health bar)
+            if (enemy.shieldMax) {
+                const sBarY = barY - barHeight - 2;
+                ctx.fillStyle = '#333333';
+                ctx.fillRect(barX, sBarY, barWidth, barHeight);
+                const shieldWidth = (barWidth * enemy.shield) / enemy.shieldMax;
+                ctx.fillStyle = '#00ddff';
+                ctx.fillRect(barX, sBarY, shieldWidth, barHeight);
+            }
         } else if (enemy.type === 'boss') {
             // Draw boss as yellow octagon
             ctx.fillStyle = enemy.color;
@@ -1580,6 +2137,16 @@ function drawEnemies() {
             const healthWidth = (barWidth * enemy.health) / enemy.maxHealth;
             ctx.fillStyle = '#ff0000'; // red
             ctx.fillRect(barX, barY, healthWidth, barHeight);
+
+            // Shield bar (above health bar)
+            if (enemy.shieldMax) {
+                const sBarY = barY - barHeight - 2;
+                ctx.fillStyle = '#333333';
+                ctx.fillRect(barX, sBarY, barWidth, barHeight);
+                const shieldWidth = (barWidth * enemy.shield) / enemy.shieldMax;
+                ctx.fillStyle = '#00ddff';
+                ctx.fillRect(barX, sBarY, shieldWidth, barHeight);
+            }
 
             // Draw "BOSS 1" text above health bar
             ctx.fillStyle = '#ffffff';
@@ -1615,6 +2182,16 @@ function drawEnemies() {
             const healthWidth = (barWidth * enemy.health) / enemy.maxHealth;
             ctx.fillStyle = '#ff0000'; // red
             ctx.fillRect(barX, barY, healthWidth, barHeight);
+
+            // Shield bar (above health bar)
+            if (enemy.shieldMax) {
+                const sBarY = barY - barHeight - 2;
+                ctx.fillStyle = '#333333';
+                ctx.fillRect(barX, sBarY, barWidth, barHeight);
+                const shieldWidth = (barWidth * enemy.shield) / enemy.shieldMax;
+                ctx.fillStyle = '#00ddff';
+                ctx.fillRect(barX, sBarY, shieldWidth, barHeight);
+            }
         } else if (enemy.type === 'watcher') {
             // Draw watcher - teal circle with cone FOV and peripheral vision
 
@@ -1700,6 +2277,16 @@ function drawEnemies() {
             const healthWidth = (barWidth * enemy.health) / enemy.maxHealth;
             ctx.fillStyle = '#ff0000';
             ctx.fillRect(barX, barY, healthWidth, barHeight);
+
+            // Shield bar (above health bar)
+            if (enemy.shieldMax) {
+                const sBarY = barY - barHeight - 2;
+                ctx.fillStyle = '#333333';
+                ctx.fillRect(barX, sBarY, barWidth, barHeight);
+                const shieldWidth = (barWidth * enemy.shield) / enemy.shieldMax;
+                ctx.fillStyle = '#00ddff';
+                ctx.fillRect(barX, sBarY, shieldWidth, barHeight);
+            }
         } else if (enemy.type === 'screamer') {
             // Draw screamer - red circle with cone FOV, alertness gauge, and scream effect
 
@@ -1822,6 +2409,16 @@ function drawEnemies() {
             const sHealthWidth = (barWidth * enemy.health) / enemy.maxHealth;
             ctx.fillStyle = '#ff0000';
             ctx.fillRect(barX, barY, sHealthWidth, barHeight);
+
+            // Shield bar (above health bar)
+            if (enemy.shieldMax) {
+                const sBarY = barY - barHeight - 2;
+                ctx.fillStyle = '#333333';
+                ctx.fillRect(barX, sBarY, barWidth, barHeight);
+                const shieldWidth = (barWidth * enemy.shield) / enemy.shieldMax;
+                ctx.fillStyle = '#00ddff';
+                ctx.fillRect(barX, sBarY, shieldWidth, barHeight);
+            }
         } else if (enemy.type === 'phantom') {
             // Draw phantom - light blue with evade gauge and trail
 
@@ -1891,6 +2488,16 @@ function drawEnemies() {
             const pHealthWidth = (barWidth * enemy.health) / enemy.maxHealth;
             ctx.fillStyle = '#ff0000';
             ctx.fillRect(barX, barY, pHealthWidth, barHeight);
+
+            // Shield bar (above health bar)
+            if (enemy.shieldMax) {
+                const sBarY = barY - barHeight - 2;
+                ctx.fillStyle = '#333333';
+                ctx.fillRect(barX, sBarY, barWidth, barHeight);
+                const shieldWidth = (barWidth * enemy.shield) / enemy.shieldMax;
+                ctx.fillStyle = '#00ddff';
+                ctx.fillRect(barX, sBarY, shieldWidth, barHeight);
+            }
         } else {
             // Draw enemy circle (blue or purple)
             ctx.fillStyle = enemy.color;
@@ -1912,6 +2519,16 @@ function drawEnemies() {
             const healthWidth = (barWidth * enemy.health) / enemy.maxHealth;
             ctx.fillStyle = '#ff0000'; // red
             ctx.fillRect(barX, barY, healthWidth, barHeight);
+
+            // Shield bar (above health bar)
+            if (enemy.shieldMax) {
+                const sBarY = barY - barHeight - 2;
+                ctx.fillStyle = '#333333';
+                ctx.fillRect(barX, sBarY, barWidth, barHeight);
+                const shieldWidth = (barWidth * enemy.shield) / enemy.shieldMax;
+                ctx.fillStyle = '#00ddff';
+                ctx.fillRect(barX, sBarY, shieldWidth, barHeight);
+            }
         }
     });
 }
@@ -1965,6 +2582,60 @@ function drawGoldDrops() {
         ctx.textBaseline = 'middle';
         ctx.fillText('$', gold.x, gold.y);
     });
+}
+
+// Draw weapon drops on the ground
+function drawWeaponDrops() {
+    weaponDrops.forEach(drop => {
+        const wDef = weaponTypes[drop.type];
+
+        // Outer glow
+        ctx.strokeStyle = wDef.color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(drop.x, drop.y, 14, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Inner circle
+        ctx.fillStyle = wDef.color;
+        ctx.globalAlpha = 0.3;
+        ctx.beginPath();
+        ctx.arc(drop.x, drop.y, 14, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+
+        // Weapon initial
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(wDef.name[0], drop.x, drop.y);
+
+        // Name below
+        ctx.font = '9px Arial';
+        ctx.fillStyle = wDef.color;
+        ctx.fillText(wDef.name, drop.x, drop.y + 22);
+    });
+
+    // Draw pickup gauge
+    if (pickupTarget && pickupProgress > 0) {
+        const gaugeRadius = 20;
+        const gaugeAngle = pickupProgress * Math.PI * 2;
+
+        // Background ring
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(pickupTarget.x, pickupTarget.y, gaugeRadius, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Progress ring
+        ctx.strokeStyle = '#00ff00';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(pickupTarget.x, pickupTarget.y, gaugeRadius, -Math.PI / 2, -Math.PI / 2 + gaugeAngle);
+        ctx.stroke();
+    }
 }
 
 // Draw background stars
@@ -2165,6 +2836,67 @@ function drawHealthBar() {
     ctx.textBaseline = 'middle';
     ctx.fillText(`${player.mines}/${player.maxMines}`, mineBarX + 2.5, mineBarY + barHeight / 2);
 
+    // Weapon display (below mine bar)
+    const wpnIconX = healthIconX;
+    const wpnIconY = mineBarY + barHeight + barSpacing + 2;
+    const wpnBarX = healthBarX;
+    const wpnBarY = mineBarY + barHeight + barSpacing + 2;
+
+    for (let w = 0; w < player.weapons.length; w++) {
+        const weapon = player.weapons[w];
+        const wDef = weaponTypes[weapon.type];
+        const yOff = w * (barHeight + barSpacing);
+        const isActive = w === player.activeWeapon;
+
+        // Icon box
+        ctx.strokeStyle = isActive ? '#ffffff' : CONFIG.ui.barBorderColor;
+        ctx.lineWidth = isActive ? 2 : borderWidth;
+        ctx.beginPath();
+        ctx.roundRect(wpnIconX, wpnIconY + yOff, iconSize, iconSize, borderRadius);
+        ctx.stroke();
+
+        // Weapon initial in icon
+        ctx.fillStyle = wDef.color;
+        ctx.font = 'bold 9px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(wDef.name[0], wpnIconX + iconSize / 2, wpnIconY + yOff + iconSize / 2);
+
+        // Bar border
+        ctx.strokeStyle = isActive ? '#ffffff' : CONFIG.ui.barBorderColor;
+        ctx.lineWidth = isActive ? 2 : borderWidth;
+        ctx.beginPath();
+        ctx.roundRect(wpnBarX, wpnBarY + yOff, barWidth, barHeight, borderRadius);
+        ctx.stroke();
+
+        // Bar background
+        ctx.fillStyle = CONFIG.ui.barBackgroundColor;
+        ctx.beginPath();
+        ctx.roundRect(wpnBarX + borderWidth, wpnBarY + yOff + borderWidth, barWidth - borderWidth * 2, barHeight - borderWidth * 2, borderRadius - 1);
+        ctx.fill();
+
+        // Ammo fill
+        const ammoWidth = ((barWidth - borderWidth * 2) * weapon.ammo) / wDef.ammo;
+        ctx.fillStyle = wDef.color;
+        ctx.beginPath();
+        ctx.roundRect(wpnBarX + borderWidth, wpnBarY + yOff + borderWidth, ammoWidth, barHeight - borderWidth * 2, borderRadius - 1);
+        ctx.fill();
+
+        // Weapon name + ammo text (or regen countdown / HOLD indicator)
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 8px Arial';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        if (wDef.regenCooldown && weapon.ammo <= 0 && weapon.depletedTime) {
+            const remaining = Math.max(0, Math.ceil((wDef.regenCooldown - (Date.now() - weapon.depletedTime)) / 1000));
+            ctx.fillText(`${wDef.name} REGEN ${remaining}s`, wpnBarX + 3, wpnBarY + yOff + barHeight / 2);
+        } else if (wDef.fireMode === 'charge') {
+            ctx.fillText(`${wDef.name} ${weapon.ammo}/${wDef.ammo} HOLD`, wpnBarX + 3, wpnBarY + yOff + barHeight / 2);
+        } else {
+            ctx.fillText(`${wDef.name} ${weapon.ammo}/${wDef.ammo}`, wpnBarX + 3, wpnBarY + yOff + barHeight / 2);
+        }
+    }
+
     // Reset transparency and shadow for other elements
     ctx.globalAlpha = 1.0;
     ctx.shadowBlur = 0;
@@ -2252,7 +2984,9 @@ function gameLoop() {
     drawWatcherGhosts();
     drawEnemies();
     drawGoldDrops();
+    drawWeaponDrops();
     drawPlayer();
+    drawChargeEffect();
     drawBullets();
     drawTurretBullets();
 

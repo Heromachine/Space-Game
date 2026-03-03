@@ -155,6 +155,14 @@ class EnemyManager {
             enemy.evadeTrail = [];
         }
 
+        if (config.shieldMax !== undefined) {
+            enemy.shieldMax = config.shieldMax;
+            enemy.shield = config.shieldMax;
+            enemy.shieldRegen = config.shieldRegen || 10;
+            enemy.shieldRegenDelay = 3000;
+            enemy.lastShieldDamageTime = 0;
+        }
+
         // Boss turret specific properties
         if (isBossTurret) {
             enemy.attachedToBoss = true;
